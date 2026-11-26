@@ -1,4 +1,4 @@
-clc, clear all, clf %clear code parameters as per usual
+clc, clear, clf, close all %clear code parameters as per usual
 %% Documentation
 % In terms of the bridge, assume it takes the following structure in terms
 % of notation: 
@@ -10,10 +10,10 @@ clc, clear all, clf %clear code parameters as per usual
 %% Todo
 % Rewrite Load Simulation to accept arbitrary assumptions for resolution. 
 %% Simulation Parameters
-resolution = 1200; %break bridge up into 1200 segments, resolution of 1mm per node 
+resolution = 2400; %break bridge up into 1200 segments, resolution of 1mm per node 
 L = 1200; %actual bridge length
-n_train = 2*1200; % train locations present, evenly split across span + bridge unloading 
-dx = L/resolution; %spatial step
+n_train = 2*resolution; % train locations present, evenly split across span + bridge unloading 
+dx = L/resolution; %Convertion ratio from realdistance / nodes 
 
 shearForceDiagrami = zeros(n_train,resolution+1);
 bendingMomentDiagrami = zeros(n_train, resolution+1);
@@ -27,9 +27,13 @@ totalTrainWeight = 400; % in terms of Newtons
 
 cartWeights = ones(1,3).*totalTrainWeight/3; % Assume that the cartWeights is arranged in Cart 2, Cart 1, Locomotive. 
 
+% Custom Weight Section
+ [totalTrainWeight, cartWeights] =updateTrainLoads([135,135,182]);
+
+
 % in terms of millimeters, adjusts based on ratio of resolution and
 % distance
-trainLoadPositions = [-856 -680 -516	-340	-176	0].*dx; %right-most value is locomotive
+trainLoadPositions = [-856 -680 -516	-340	-176	0]/dx; %right-most value is locomotive
 
 trainLoads = ones(1,6).*totalTrainWeight/6*-1; %initial load is fully uniformly distributed
 
@@ -63,15 +67,15 @@ function arr = ReplaceNegatives(arr)
     arr = max(arr,0); %rep
 end
 
-function out = TrimLoads(arr, resolution) % Trims loads to not be effective if they are OFF the bridge
+function mask = TrimLoads(nodePositions, resolution) % Trims loads to not be effective if they are OFF the bridge
     arguments
-        arr double
+        nodePositions double
         resolution double = 1200 
     end
-    out= arr;
-    out(out>resolution) = -1; %check if it's off the bridge to begin with, if so set to 0
-    out(out>=0) = 1; %if location is to the right of bridge
-    out(out<0) = 0; % if
+
+    % If nodes are in [0,resolution] -> 1
+    % else, not included (i.e. off the bridge) 
+    mask = double((nodePositions >=0 ) & (nodePositions <= resolution));
     
    
 end
@@ -80,20 +84,19 @@ end
 % weight respectively. 
 function [newTotalTrainWeight, newTrainLoads] =  updateTrainLoads(newCartWeights)
     newTotalTrainWeight = sum(newCartWeights,2); 
-    newTrainLoads = ones(1,6);
-    newTrainLoads = newTrainLoads(1:2).*newCartWeights(1)/2; %cart 2
-    newTrainLoads = newTrainLoads(3:4).*newCartWeights(2)/2; % cart 1
-    newTrainLoads = newTrainLoads(5:6).*newCartWeights(3)/2; %locomotive
+    newTrainLoads = zeros(1,6);
+    newTrainLoads(1:2) = newCartWeights(1) / 2; % cart 2
+    newTrainLoads(3:4) = newCartWeights(2) / 2; % cart 1
+    newTrainLoads(5:6) = newCartWeights(3) / 2; % locomotive
 end 
 
 %% Load Simulation
 reactions = [0 0]; % Reaction at A, B respectively. 
-for iteration = 1:n_train %step through evenly located train positions 
+for iteration = 1:n_train %step through each node, where iteration is the node at a point
     
     %distance from the left, scaled by resolution size 
-    effectiveLoadLocations = (trainLoadPositions + 2*resolution*(iteration/n_train)); 
-    iteration
-    effectiveLoads = TrimLoads(effectiveLoadLocations).*trainLoads %adds loads
+    effectiveLoadLocations = (trainLoadPositions + iteration); % move train right by a node
+    effectiveLoads = TrimLoads(effectiveLoadLocations,resolution).*trainLoads; %adds loads
     
     % Solving for reaction on far side: 
     reactions(2) = -1*sum(effectiveLoads.*effectiveLoadLocations)/(resolution); %considers resolution as distance basically
@@ -133,7 +136,7 @@ figure(1)
 plot(linspace(1,L,resolution+1),maxShearForceData)
 yline(0)
 legend("Shear Force")
-ylabel("xShear Force (N)")
+ylabel("Shear Force (N)")
 xlabel("Distance along Beam (mm)")
 hold off
 
@@ -143,19 +146,11 @@ plot(linspace(1,L,resolution+1),maxBendingMomentdata)
 set(gca, 'YDir', 'reverse')
 yline(0)
 legend("Bending Moment")
-ylabel("Shear Force (Nmm)")
+ylabel("Bending Moment (N*mm)")
 xlabel("Distance along Beam (mm)")
 hold off
 
-save("bridgeloads.mat","maxShearForceData", "maxBendingMomentdata", "totalTrainWeight")
 
-% hold on
-% figure(3) 
-% for row = 1:size(shearForceDiagrami,1)-20
-% 
-%     currentRow = shearForceDiagrami(row,:)
-% 
-%     plot(linspace(1,L,resolution+1), currentRow)
-% end
-% hold off
+save("bridgeloads.mat","maxShearForceData", "maxBendingMomentdata", "totalTrainWeight","resolution")
+
 %% Stress / Potential Failure Mode Simulation
