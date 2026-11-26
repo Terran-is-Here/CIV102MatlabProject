@@ -46,13 +46,13 @@ end
 
 % Calculates I, ybar for a given cross-section and returns it's values. 
 function arr = BridgeNodeConstructor(bridgeGeometry,bridgeGlueGeometry,L,configs,endFlag)  
-arguments
-    bridgeGeometry 
-    bridgeGlueGeometry 
-    L 
-    configs 
-    endFlag = false  
-end
+    arguments
+        bridgeGeometry 
+        bridgeGlueGeometry 
+        L 
+        configs 
+        endFlag = false  
+    end
     % first, calculate corresponding centroidal depth 
     totalArea = 0;
     numerator = 0; 
@@ -85,13 +85,14 @@ end
 
 
     % return array of structs
+    effectiveNodeLength = round(configs.resolution * (L / configs.L)) + endFlag
     arr = repmat(struct( ...
         "nodeMomentOfInertia",nodeMomentOfInertia, ... % Return corresponding term of I for the node
         "nodeCentroid",nodeCentroid, ... % Return corresponding term of ybar of the node from the top
         "sectionHeight",sectionHeight,... % Return corresponding height of the section overall
         "bridgeGeometryObjects", bridgeGeometry,... % Return corresponding objects that went into constructing this object. 
         "bridgeGlueGeometry", bridgeGlueGeometry)... % Return applicable glue geometry at some certain point. 
-        ,round(L/configs.dx + endFlag),1); % scale by sim scaling factor
+        ,effectiveNodeLength,1); % scale by sim scaling factor
 end
 
 % Defaults to traversing downwards, indicate negative direction to traverse upwards. 
@@ -124,6 +125,7 @@ function Q = findQEffective(depth,centroidalAxis,geometryObjects, direction)
         effectiveObject = effectiveObjects(i);
         objectBottom = effectiveObject.height + effectiveObject.initialYValue;
         
+        % neeeds to be fixed for more complex geometries
         if direction == 1
             if (objectBottom > depth)
                 effectiveHeight = depth-effectiveObject.initialYValue;
@@ -147,7 +149,7 @@ function Q = findQEffective(depth,centroidalAxis,geometryObjects, direction)
     end 
 end 
 
-function V = findMaxShearStress(tauMax,I,B,Q)
+function V = findMaxShearForce(tauMax,I,B,Q)
     V = (tauMax*I*B)/Q;
 end 
 
@@ -214,16 +216,18 @@ for nodeNumber = 1:length(bridgeNodeContainer) %For every node within the bridge
 
     % Checking for Glue Failure at Depth
     % Bridge Glue Geometry Object Index
-    bridgeNodeContainer(nodeNumber).maxGlueShearStress = []; %buffer
+    bridgeNodeContainer(nodeNumber).maxGlueShearForce = []; %buffer
     for bridgeGGOIndex = 1:length(IBN.bridgeGlueGeometry.glueThickness) % assume lists are equal length
         glueDepth = IBN.bridgeGlueGeometry.glueDepth(bridgeGGOIndex);
         glueThickness = IBN.bridgeGlueGeometry.glueThickness(bridgeGGOIndex);
         QEffective = findQEffective(glueDepth, IBN.nodeCentroid, IBN.bridgeGeometryObjects); % Find effective Q at this height 
 
-        bridgeNodeContainer(nodeNumber).maxGlueShearStress(end+1) =  findMaxShearStress(materialProperties.glueStrength,IBN.nodeMomentOfInertia, glueThickness,QEffective);
+        bridgeNodeContainer(nodeNumber).maxGlueShearForce(end+1) =  findMaxShearForce(materialProperties.glueStrength,IBN.nodeMomentOfInertia, glueThickness,QEffective);
     end
 
-
+    % Checking for Wall Shear Failure 
+    wallQ = findQEffective(IBN.nodeCentroid,IBN.nodeCentroid,IBN.bridgeGeometryObjects,1)
+    bridgeNodeContainer(nodeNumber).maxWallShearForce = findMaxShearForce(materialProperties.maxShearStress,IBN.nodeMomentOfInertia,1.27,wallQ)
     
 
 
@@ -231,7 +235,7 @@ end
 
 
 %% Plots
-x = linspace(1,simConfigs.L,simConfigs.resolution+1)
+x = linspace(0,simConfigs.L,simConfigs.resolution+1)
 % Flexural Stress Plots
 figure(1) 
 hold on
@@ -242,6 +246,7 @@ plot(x,[bridgeNodeContainer.maxTensileBendingMoment])
 yline(0)
 ax = gca;
 ax.YAxis.Exponent = 0
+title("Bending Moment vs Flexural Failure Modes")
 legend("Bending Moment","Failure under Compressive Failure","Failure under Tensile Failure")
 ylabel("Bending Moment (N*mm)")
 xlabel("Distance along Beam (mm)")
@@ -249,21 +254,35 @@ xlabel("Distance along Beam (mm)")
 hold off
 
 % Shear Stress Plots
-row1Cells = arrayfun(@(node) node.maxGlueShearStress(:, 1), bridgeNodeContainer, 'UniformOutput', false);
-glueShearStress1 = [row1Cells{:}]
+% Glue Stress Plots (per location of glue) 
+row1Cells = arrayfun(@(node) node.maxGlueShearForce(:, 1), bridgeNodeContainer, 'UniformOutput', false);
+maxGlueShearForce1 = [row1Cells{:}]
 
 figure(2) 
 hold on
 plot(x,abs(maxShearForceData))
-plot(x,glueShearStress1.')
+plot(x,maxGlueShearForce1.')
 yline(0)
 ax = gca;
 ax.YAxis.Exponent = 0
 legend("Max Shear Force", "Glue Shear Stress Fail 1")
 xlabel("Distance along Beam(mm)")
 ylabel("Shear Force (N)")
+title("Shear Force vs Glue Failure Modes")
 hold off
 
+figure(3) 
+hold on
+plot(x,abs(maxShearForceData))
+plot(x,[bridgeNodeContainer.maxWallShearForce])
+yline(0)
+ax = gca;
+ax.YAxis.Exponent = 0
+title("Shear Stress vs Wall Shear Failure")
+legend("Shear Stress","Wall Shear Failure")
+ylabel("Shear Force (N)")
+xlabel("Distance along Beam (mm)")
+hold off 
 
 %% Factor of Safety Calculations 
 %figure(3) 
