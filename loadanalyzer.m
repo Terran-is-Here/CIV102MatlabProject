@@ -27,16 +27,17 @@ totalTrainWeight = 400; % in terms of Newtons
 
 cartWeights = ones(1,3).*totalTrainWeight/3; % Assume that the cartWeights is arranged in Cart 2, Cart 1, Locomotive. 
 
-% Custom Weight Section
- [totalTrainWeight, cartWeights] =updateTrainLoads([135,135,182]);
 
 
 % in terms of millimeters, adjusts based on ratio of resolution and
 % distance
 trainLoadPositions = [-856 -680 -516	-340	-176	0]/dx; %right-most value is locomotive
 
-trainLoads = ones(1,6).*totalTrainWeight/6*-1; %initial load is fully uniformly distributed
+ trainLoads = ones(1,6).*totalTrainWeight/6*-1; %initial load is fully uniformly distributed
 
+
+% Custom Weight Section
+% [totalTrainWeight, trainLoads] =updateTrainLoads([135,135,482]);
 %% Bridge Geometry
 %Parameters are [x of cross-section (or cross-sectional change location),
 %etc. 
@@ -85,9 +86,9 @@ end
 function [newTotalTrainWeight, newTrainLoads] =  updateTrainLoads(newCartWeights)
     newTotalTrainWeight = sum(newCartWeights,2); 
     newTrainLoads = zeros(1,6);
-    newTrainLoads(1:2) = newCartWeights(1) / 2; % cart 2
-    newTrainLoads(3:4) = newCartWeights(2) / 2; % cart 1
-    newTrainLoads(5:6) = newCartWeights(3) / 2; % locomotive
+    newTrainLoads(1:2) = newCartWeights(1) / -2; % cart 2
+    newTrainLoads(3:4) = newCartWeights(2) / -2; % cart 1
+    newTrainLoads(5:6) = newCartWeights(3) / -2; % locomotive
 end 
 
 %% Load Simulation
@@ -131,18 +132,20 @@ maxBendingMomentdata = max(bendingMomentDiagrami,[],"ComparisonMethod","abs");
 %plot(linspace(1,1200,1201),bendingMomentDiagrami(1,:))
 
 
-hold on
+x_space = linspace(1,L,resolution+1);
 figure(1)
-plot(linspace(1,L,resolution+1),maxShearForceData)
+hold on
+plot(x_space,maxShearForceData)
 yline(0)
 legend("Shear Force")
 ylabel("Shear Force (N)")
 xlabel("Distance along Beam (mm)")
 hold off
 
-hold on
+
 figure(2)
-plot(linspace(1,L,resolution+1),maxBendingMomentdata)
+hold on
+plot(x_space,maxBendingMomentdata)
 set(gca, 'YDir', 'reverse')
 yline(0)
 legend("Bending Moment")
@@ -152,5 +155,6 @@ hold off
 
 
 save("bridgeloads.mat","maxShearForceData", "maxBendingMomentdata", "totalTrainWeight","resolution")
+
 
 %% Stress / Potential Failure Mode Simulation
